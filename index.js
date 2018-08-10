@@ -3,6 +3,9 @@ const process = require('process');
 const EventEmitter = require('events');
 require('colors');
 
+const START_GAME = 1129149;
+const NUM_GAMES = 999;
+
 const OutOfCashException = {};
 
 class Engine {
@@ -18,14 +21,21 @@ class Engine {
         this.maxWinStreak = 0;
         this.lossStreak = 0;
         this.winStreak = 0;
+        this.lastGame = {};
         this.events = {
-            game_starting: null,
-            game_crash: null,
+            game_starting: _ => {},
+            game_crash: _ => {},
+            game_ended: _ => {}
         }
     }
 
     on(event, cb) {
-        this.events[event] = cb;
+        this.events[event.toLowerCase()] = cb;
+    }
+
+    bet(amount, rate) {
+        rate *= 100;
+        return this.placeBet(amount, rate);
     }
 
     placeBet(amount, rate, cb) {
@@ -33,22 +43,45 @@ class Engine {
         this.balance -= amount;
         this.lastBet = amount;
         this.lastRate = rate;
-        cb.call(null);
+        if (cb) {
+            cb.call(null);
+        }
+    }
+
+    get history() {
+        var lastGame = this.lastGame;
+        return {
+            first() {
+                return {
+                    bust: lastGame.game_crash/100
+                }
+            }
+        }
+    }
+
+    getLastBet() {
+        return this.lastBet/100;
     }
 
     run() {
+        var i = 0;
         fs.readdir(`${__dirname}/games`, (err, files) => {
             try {
                 files.sort((a, b) => {
                     return a < b ? -1 : 1;
                 }).forEach((file, key) => {
+                    if (i > 3000) {
+                        throw new Error('Time to stop!');
+                    }
                     const contents = fs.readFileSync(`${__dirname}/games/${file}`);
                     const json = JSON.parse(contents);
                     this.handleRun(json);
+                    i++;
                 });
             } catch (e) {
-                if (e !== OutOfCashException) throw e;
-                console.error('Out of cash!'.red);
+                if (e === OutOfCashException) {
+                    console.error('Out of cash!'.red);
+                }
             }
             this.handleEnd()
         });
@@ -60,6 +93,9 @@ class Engine {
         // Game starting...
         this.events.game_starting.call(null);
         this.events.game_crash(json);
+        this.events.game_ended(json);
+
+        this.lastGame = json;
 
         let result = 'Lose'.red;
         if (json.game_crash < this.lastRate) {
@@ -71,7 +107,7 @@ class Engine {
             this.winStreak = 0;
             this.lossStreak += 1;
         } else {
-            // WIN
+            //.Balancecconsole.log('Player won');
             this.balance += this.lastBet * (this.lastRate/100)
             result = 'Win '.green;
             this.wins += 1;
@@ -110,12 +146,6 @@ class Engine {
     }
 }
 
-var startBalance = 100000; // 100k
-
-const engine = new Engine(startBalance);
-
-// Paste your script below
-
-// End script
+const engine = new Engine(100000);
 
 engine.run();
